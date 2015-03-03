@@ -4,14 +4,15 @@
  */
 
 var start = require('./common')
-  , assert = require('assert')
+  , should = require('should')
   , mongoose = start.mongoose
   , utils = require('../lib/utils')
   , random = utils.random
   , Query = require('../lib/query')
   , Schema = mongoose.Schema
   , SchemaType = mongoose.SchemaType
-  , ObjectId = Schema.Types.ObjectId
+  , CastError = SchemaType.CastError
+  , ObjectId = Schema.ObjectId
   , MongooseBuffer = mongoose.Types.Buffer
   , DocumentObjectId = mongoose.Types.ObjectId
   , fs = require('fs')
@@ -29,92 +30,80 @@ var Person = new Schema({
 mongoose.model('PersonForStream', Person);
 var collection = 'personforstream_' + random();
 
-describe('query stream:', function(){
-  before(function (done) {
-    var db = start()
-      , P = db.model('PersonForStream', collection)
+;(function setup () {
+  var db = start()
+    , P = db.model('PersonForStream', collection)
 
-    var people = names.map(function (name) {
-      return { name: name };
-    });
-
-    P.create(people, function (err) {
-      assert.ifError(err);
-      db.close();
-      done();
-    });
+  var people = names.map(function (name) {
+    return { name: name };
   });
 
-  it('works', function(done){
+  P.create(people, function (err) {
+    should.strictEqual(null, err);
+    db.close();
+    assignExports();
+  });
+})()
+
+function assignExports () { var o = {
+
+  'cursor stream': function () {
     var db = start()
       , P = db.model('PersonForStream', collection)
       , i = 0
       , closed = 0
       , paused = 0
       , resumed = 0
-      , seen = {}
       , err
 
-    var stream = P.find().batchSize(3).stream();
+    var stream = P.find({}).stream();
 
     stream.on('data', function (doc) {
-      assert.strictEqual(true, !! doc.name);
-      assert.strictEqual(true, !! doc._id);
-
-      // no dup docs emitted
-      assert.ok(!seen[doc.id]);
-      seen[doc.id] = 1;
+      should.strictEqual(true, !! doc.name);
+      should.strictEqual(true, !! doc._id);
 
       if (paused > 0 && 0 === resumed) {
         err = new Error('data emitted during pause');
-        return cb();
+        return done();
       }
 
-      ++i;
-
-      if (i === 3) {
-        assert.equal(false, stream.paused);
+      if (++i === 3) {
+        stream.paused.should.be.false;
         stream.pause();
-        assert.equal(true, stream.paused);
+        stream.paused.should.be.true;
         paused++;
 
         setTimeout(function () {
-          assert.equal(true, stream.paused);
+          stream.paused.should.be.true;
           resumed++;
           stream.resume();
-          assert.equal(false, stream.paused);
+          stream.paused.should.be.false;
         }, 20);
-      } else if (i === 4) {
-        stream.pause();
-        assert.equal(true, stream.paused);
-        stream.resume();
-        assert.equal(false, stream.paused);
       }
     });
 
     stream.on('error', function (er) {
       err = er;
-      cb();
+      done();
     });
 
     stream.on('close', function () {
       closed++;
-      cb();
+      done();
     });
 
-    function cb () {
+    function done () {
       db.close();
-      assert.strictEqual(undefined, err);
-      assert.equal(i, names.length);
-      assert.equal(1, closed);
-      assert.equal(1, paused);
-      assert.equal(1, resumed);
-      assert.equal(true, stream._cursor.isClosed());
-      done();
+      should.strictEqual(undefined, err);
+      should.equal(i, names.length);
+      closed.should.equal(1);
+      paused.should.equal(1);
+      resumed.should.equal(1);
+      stream._cursor.isClosed().should.be.true;
     }
-  });
+  }
 
-  it('immediately destroying a stream prevents the query from executing', function(done){
+, 'immediately destroying a stream prevents the query from executing': function () {
     var db = start()
       , P = db.model('PersonForStream', collection)
       , i = 0
@@ -124,64 +113,58 @@ describe('query stream:', function(){
     stream.on('data', function () {
       i++;
     })
-    stream.on('close', cb);
-    stream.on('error', cb);
+    stream.on('close', done);
+    stream.on('error', done);
 
     stream.destroy();
 
-    function cb (err) {
-      assert.ifError(err);
-      assert.equal(0, i);
+    function done (err) {
+      should.strictEqual(undefined, err);
+      i.should.equal(0);
       process.nextTick(function () {
         db.close();
-        assert.strictEqual(null, stream._fields);
-        done();
+        should.strictEqual(null, stream._fields);
       })
     }
-  });
+  }
 
-  it('destroying a stream stops it', function(done){
-    this.slow(300);
-
+, 'destroying a stream stops it': function () {
     var db = start()
       , P = db.model('PersonForStream', collection)
       , finished = 0
       , i = 0
 
-    var stream = P.where('name').exists().limit(10).select('_id').stream();
+    var stream = P.where('name').$exists().limit(10).only('_id').stream();
 
-    assert.strictEqual(null, stream._destroyed);
-    assert.equal(true, stream.readable);
+    should.strictEqual(null, stream._destroyed);
+    stream.readable.should.be.true;
 
     stream.on('data', function (doc) {
-      assert.strictEqual(undefined, doc.name);
+      should.strictEqual(undefined, doc.name);
       if (++i === 5) {
         stream.destroy();
-        assert.equal(false, stream.readable);
+        stream.readable.should.be.false;
       }
     });
 
-    stream.on('close', cb);
-    stream.on('error', cb);
+    stream.on('close', done);
+    stream.on('error', done);
 
-    function cb (err) {
+    function done (err) {
       ++finished;
       setTimeout(function () {
         db.close();
-        assert.strictEqual(undefined, err);
-        assert.equal(5, i);
-        assert.equal(1, finished);
-        assert.equal(true, stream._destroyed);
-        assert.equal(false, stream.readable);
-        assert.equal(true, stream._cursor.isClosed());
-        done();
-      }, 100)
+        should.strictEqual(undefined, err);
+        i.should.equal(5);
+        finished.should.equal(1);
+        stream._destroyed.should.equal(true);
+        stream.readable.should.be.false;
+        stream._cursor.isClosed().should.be.true;
+      }, 150)
     }
-  });
+  }
 
-  it('errors', function(done){
-    this.slow(300);
-
+, 'cursor stream errors': function () {
     var db = start({ server: { auto_reconnect: false }})
       , P = db.model('PersonForStream', collection)
       , finished = 0
@@ -200,195 +183,50 @@ describe('query stream:', function(){
       closed++;
     });
 
-    stream.on('error', cb);
+    stream.on('error', done);
 
-    function cb (err) {
+    function done (err) {
       ++finished;
       setTimeout(function () {
-        assert.ok(/connection to host localhost:27017 was destroyed/.test(err.message), err.message);
-        assert.equal(i, 5);
-        assert.equal(1, closed);
-        assert.equal(1, finished);
-        assert.equal(stream._destroyed,true);
-        assert.equal(stream.readable, false);
-        assert.equal(stream._cursor.isClosed(), true);
-        done();
-      }, 100)
+        should.equal('no open connections', err.message);
+        i.should.equal(5);
+        closed.should.equal(1);
+        finished.should.equal(1);
+        stream._destroyed.should.equal(true);
+        stream.readable.should.be.false;
+        stream._cursor.isClosed().should.be.true;
+      }, 150)
     }
-  });
+  }
 
-  it('pipe', function(done) {
+, 'cursor stream pipe': function () {
     var db = start()
       , P = db.model('PersonForStream', collection)
       , filename = '/tmp/_mongoose_stream_out.txt'
-      , out = fs.createWriteStream(filename);
+      , out = fs.createWriteStream(filename)
 
-    var opts = { transform: JSON.stringify };
-    var stream = P.find().sort('name').limit(20).stream(opts);
+    var stream = P.find().sort('name', 1).limit(20).stream();
     stream.pipe(out);
 
-    var cb = function(err) {
+    stream.on('error', done);
+    stream.on('close', done);
+
+    function done (err) {
       db.close();
-      assert.ifError(err);
+      should.strictEqual(undefined, err);
       var contents = fs.readFileSync(filename, 'utf8');
-      assert.ok(/Aaden/.test(contents));
-      assert.ok(/Aaron/.test(contents));
-      assert.ok(/Adrian/.test(contents));
-      assert.ok(/Aditya/.test(contents));
-      assert.ok(/Agustin/.test(contents));
+      ;/Aaden/.test(contents).should.be.true;
+      ;/Aaron/.test(contents).should.be.true;
+      ;/Adrian/.test(contents).should.be.true;
+      ;/Aditya/.test(contents).should.be.true;
+      ;/Agustin/.test(contents).should.be.true;
       fs.unlink(filename);
-      done();
-    };
+    }
+  }
+}
 
-    stream.on('error', cb);
-    out.on('close', cb);
-  });
+// end exports
 
-  it('lean', function(done) {
-    var db = start()
-      , P = db.model('PersonForStream', collection)
-      , i = 0
-      , closed = 0
-      , err;
+utils.merge(exports, o);
 
-    var stream = P.find({}).lean().stream();
-
-    stream.on('data', function(doc) {
-      assert.strictEqual(false, doc instanceof mongoose.Document);
-      i++;
-
-      if (1 === i) {
-        stream.pause();
-        assert.equal(true, stream.paused);
-        stream.resume();
-        assert.equal(false, stream.paused);
-      } else if (2 === i) {
-        stream.pause();
-        assert.equal(true, stream.paused);
-        process.nextTick(function () {
-          assert.equal(true, stream.paused);
-          stream.resume();
-          assert.equal(false, stream.paused);
-        })
-      }
-    });
-
-    stream.on('error', function (er) {
-      err = er;
-      cb();
-    });
-
-    stream.on('close', function () {
-      closed++;
-      cb();
-    });
-
-    var cb = function() {
-      db.close();
-      assert.strictEqual(undefined, err);
-      assert.equal(i, names.length);
-      assert.equal(1, closed);
-      assert.equal(true, stream._cursor.isClosed());
-      done();
-    };
-  });
-
-  it('supports $elemMatch with $in (gh-1091)', function(done) {
-    this.timeout(3000);
-
-    var db = start();
-
-    var postSchema = new Schema({
-        ids: [{type: Schema.ObjectId}]
-      , title: String
-    });
-
-    var B = db.model('gh-1100-stream', postSchema);
-    var _id1 = new mongoose.Types.ObjectId;
-    var _id2 = new mongoose.Types.ObjectId;
-
-    B.create({ ids: [_id1, _id2] }, function(err, doc) {
-      assert.ifError(err);
-
-      var error;
-
-      var stream = B.find({ _id: doc._id })
-        .select({ title: 1, ids: { $elemMatch: { $in: [_id2.toString()] }}})
-        .stream();
-
-      stream.
-        on('data', function (found) {
-          assert.equal(found.id, doc.id);
-          assert.equal(1, found.ids.length);
-          assert.equal(_id2.toString(), found.ids[0].toString());
-        }).
-        on('error', function (err) {
-          error = err;
-        }).
-        on('close', function () {
-          db.close();
-          done(error);
-        });
-    });
-  });
-
-  it('supports population (gh-1411)', function(done) {
-    var db = start();
-
-    var barSchema = Schema({
-      value: Number
-    });
-
-    var fooSchema = Schema({
-      bar: { type: "ObjectId", ref: "Bar" }
-    });
-
-    var Foo = db.model('Foo', fooSchema);
-    var Bar = db.model('Bar', barSchema);
-    var found = [];
-
-    Bar.create({ value: 2 }, { value: 3 }, function(err, bar1, bar2) {
-      if (err) return complete(err);
-
-      Foo.create({ bar: bar1 }, { bar: bar2 }, function(err) {
-        if (err) return complete(err);
-
-        Foo.
-          find().
-          populate('bar').
-          stream().
-          on('data', function(foo) {
-            found.push(foo.bar.value);
-          }).
-          on('end', complete).
-          on('error', complete);
-      });
-    });
-
-    var complete = function(err) {
-      if (!err) {
-        assert.ok(~found.indexOf(2));
-        assert.ok(~found.indexOf(3));
-      }
-      db.close(done);
-    };
-  });
-
-  it('respects schema options (gh-1862)', function(done) {
-    var db = start();
-
-    var schema = Schema({
-      fullname: { type: String },
-      password: { type: String, select: false },
-    });
-
-    var User = db.model('gh-1862', schema, 'gh-1862');
-    User.create({ fullname: 'val', password: 'taco' }, function(error) {
-      assert.ifError(error);
-      User.find().stream().on('data', function(doc) {
-        assert.equal(undefined, doc.password);
-        db.close(done);
-      });
-    });
-  });
-});
+}

@@ -3,210 +3,165 @@
  * Module dependencies.
  */
 
-var assert = require('assert')
-var Promise = require('../lib/promise');
+var should = require('should')
+  , Promise = require('../lib/promise');
 
 /**
  * Test.
  */
 
-describe('Promise', function(){
-  it('events fire right after complete()', function(done){
+module.exports = {
+
+  'test that events fire right away after complete()ing': function (beforeExit) {
     var promise = new Promise()
       , called = 0;
 
-    promise.on('fulfill', function (a, b) {
-      assert.equal(a, '1');
-      assert.equal(b, '2');
+    promise.on('complete', function (a, b) {
+      a.should.eql('1');
+      b.should.eql('2');
       called++;
     });
 
     promise.complete('1', '2');
 
-    promise.on('fulfill', function (a, b) {
-      assert.equal(a, '1');
-      assert.equal(b, '2');
+    promise.on('complete', function (a, b) {
+      a.should.eql('1');
+      b.should.eql('2');
       called++;
     });
 
-    assert.equal(2, called);
-    done();
-  });
+    beforeExit(function () {
+      called.should.eql(2);
+    });
+  },
 
-  it('events fire right after error()', function(done){
+  'test that events fire right away after error()ing': function (beforeExit) {
     var promise = new Promise()
       , called = 0;
 
-    promise.on('reject', function (err) {
-      assert.ok(err instanceof Error);
+    promise.on('err', function (err) {
+      err.should.be.an.instanceof(Error);
       called++;
     });
 
-    promise.error('booyah');
+    promise.error(new Error('booyah'));
 
-    promise.on('reject', function (err) {
-      assert.ok(err instanceof Error);
+    promise.on('err', function (err) {
+      err.should.be.an.instanceof(Error);
       called++;
     });
 
-    assert.equal(2, called);
-    done()
-  });
+    beforeExit(function () {
+      called.should.eql(2);
+    });
+  },
 
-  it('events fire right after reject()', function(done){
+  'test errback+callback from constructor': function (beforeExit) {
+    var promise = new Promise(function (err) {
+          err.should.be.an.instanceof(Error);
+          called++;
+        })
+      , called = 0;
+
+    promise.error(new Error('dawg'));
+
+    beforeExit(function () {
+      called.should.eql(1);
+    });
+  },
+
+  'test errback+callback after complete()ing': function (beforeExit) {
     var promise = new Promise()
       , called = 0;
 
-    promise.on('reject', function (err) {
-      assert.equal(9, err);
+    promise.complete('woot');
+
+    promise.addBack(function (err, data){
+      data.should.eql('woot');
       called++;
     });
 
-    promise.reject(9);
-
-    promise.on('reject', function (err) {
-      assert.equal(9, err);
+    promise.addBack(function (err, data){
+      should.strictEqual(err, null);
       called++;
     });
 
-    assert.equal(2, called);
-    done()
-  });
+    beforeExit(function () {
+      called.should.eql(2);
+    });
+  },
 
-  describe('onResolve()', function(){
-    it('from constructor works', function(done){
-      var called = 0;
+  'test errback+callback after error()ing': function (beforeExit) {
+    var promise = new Promise()
+      , called = 0;
 
-      var promise = new Promise(function (err) {
-        assert.ok(err instanceof Error);
-        called++;
-      })
+    promise.error(new Error('woot'));
 
-      promise.reject(new Error('dawg'));
-
-      assert.equal(1, called);
-      done();
+    promise.addBack(function (err){
+      err.should.be.an.instanceof(Error);
+      called++;
     });
 
-    it('after fulfill()', function(done){
-      var promise = new Promise()
-        , called = 0;
-
-      promise.fulfill('woot');
-
-      promise.onResolve(function (err, data){
-        assert.equal(data,'woot');
-        called++;
-      });
-
-      promise.onResolve(function (err, data){
-        assert.strictEqual(err, null);
-        called++;
-      });
-
-      assert.equal(2, called);
-      done();
-    })
-
-    it('after error()', function(done){
-      var promise = new Promise()
-        , called = 0;
-
-      promise.error(new Error('woot'));
-
-      promise.onResolve(function (err){
-        assert.ok(err instanceof Error);
-        called++;
-      });
-
-      promise.onResolve(function (err){
-        assert.ok(err instanceof Error);
-        called++;
-      });
-      assert.equal(2, called);
-      done();
-    })
-  });
-
-  describe('onFulfill() shortcut', function(){
-    it('works', function(done){
-      var promise = new Promise()
-        , called = 0;
-
-      promise.onFulfill(function (woot) {
-        assert.strictEqual(woot, undefined);
-        called++;
-      });
-
-      promise.fulfill();
-
-      assert.equal(1, called);
-      done();
-    })
-  })
-
-  describe('onReject shortcut', function(){
-    it('works', function(done){
-      var promise = new Promise()
-        , called = 0;
-
-      promise.onReject(function (err) {
-        assert.ok(err instanceof Error);
-        called++;
-      });
-
-      promise.reject(new Error);
-      assert.equal(1, called);
-      done();
-    })
-  });
-
-  describe('return values', function(){
-    it('on()', function(done){
-      var promise = new Promise()
-      assert.ok(promise.on('jump', function(){}) instanceof Promise);
-      done()
+    promise.addBack(function (err){
+      err.should.be.an.instanceof(Error);
+      called++;
     });
 
-    it('onFulfill()', function(done){
-      var promise = new Promise()
-      assert.ok(promise.onFulfill(function(){}) instanceof Promise);
-      done();
-    })
-    it('onReject()', function(done){
-      var promise = new Promise()
-      assert.ok(promise.onReject(function(){}) instanceof Promise);
-      done();
-    })
-    it('onResolve()', function(done){
-      var promise = new Promise()
-      assert.ok(promise.onResolve(function(){}) instanceof Promise);
-      done();
-    })
-  })
+    beforeExit(function () {
+      called.should.eql(2);
+    });
+  },
 
-  describe('casting errors', function(){
-    describe('error()', function(){
-      it('casts arguments to Error', function(done){
-        var p = new Promise(function (err) {
-          assert.ok(err instanceof Error);
-          assert.equal('3', err.message);
-          done();
-        });
+  'test addCallback shortcut': function (beforeExit) {
+    var promise = new Promise()
+      , called = 0;
 
-        p.error(3);
-      })
-    })
+    promise.addCallback(function (woot) {
+      should.strictEqual(woot, undefined);
+      called++;
+    });
 
-    describe('reject()', function(){
-      it('does not cast arguments to Error', function(done){
-        var p = new Promise(function (err, arg) {
-          assert.equal(3, err);
-          done();
-        });
+    promise.complete();
 
-        p.reject(3);
-      })
-    })
-  })
-})
+    beforeExit(function () {
+      called.should.eql(1);
+    });
+  },
+
+  'test addErrback shortcut': function (beforeExit) {
+    var promise = new Promise()
+      , called = 0;
+
+    promise.addErrback(function (err) {
+      err.should.be.an.instanceof(Error);
+      called++;
+    });
+
+    promise.error(new Error);
+
+    beforeExit(function () {
+      called.should.eql(1);
+    });
+  },
+
+  'test return value of #on()': function () {
+    var promise = new Promise()
+    promise.on('jump', function(){}).should.be.an.instanceof(Promise);
+  },
+
+  'test return value of #addCallback()': function () {
+    var promise = new Promise()
+    promise.addCallback(function(){}).should.be.an.instanceof(Promise);
+  },
+
+  'test return value of #addErrback()': function () {
+    var promise = new Promise()
+    promise.addErrback(function(){}).should.be.an.instanceof(Promise);
+  },
+
+  'test return value of #addBack()': function () {
+    var promise = new Promise()
+    promise.addBack(function(){}).should.be.an.instanceof(Promise);
+  }
+
+};

@@ -1,302 +1,170 @@
 
 var url = require('url')
   , start = require('./common')
-  , assert = require('assert')
+  , should = require('should')
   , mongoose = start.mongoose
   , Mongoose = mongoose.Mongoose
-  , Schema = mongoose.Schema
-  , random = require('../lib/utils').random
-  , collection = 'blogposts_' + random();
+  , Schema = mongoose.Schema;
 
-describe('mongoose module:', function(){
-  describe('default connection works', function(){
-    it('without options', function(done){
-      var goose = new Mongoose;
-      var db = goose.connection
-        , uri = 'mongodb://localhost/mongoose_test'
+module.exports = {
 
-      goose.connect(process.env.MONGOOSE_TEST_URI || uri);
+  'test connecting to the demo database': function(beforeExit){
+    var db = start()
+      , connected = false;
 
-      db.on('open', function(){
-        db.close(function () {
-          done();
-        });
-      });
-    })
+    db.on('open', function(){
+      connected = true;
+      db.close();
+    });
 
-    it('with options', function(done){
-      var goose = new Mongoose;
-      var db = goose.connection
-        , uri = 'mongodb://localhost/mongoose_test'
+    beforeExit(function(){
+      connected.should.be.true;
+    });
+  },
 
-      goose.connect(process.env.MONGOOSE_TEST_URI || uri, {db:{safe:false}});
+  'test default connection': function(beforeExit){
+    var db = mongoose.connection
+      , uri = 'mongodb://localhost/mongoose_test'
+      , connected = false;
 
-      db.on('open', function(){
-        db.close(function () {
-          done();
-        });
-      });
-    })
-  });
+    mongoose.connect(process.env.MONGOOSE_TEST_URI || uri);
+    db.on('open', function(){
+      connected = true;
+      db.close();
+    });
 
-  it('{g,s}etting options', function(done){
+    beforeExit(function(){
+      connected.should.be.true;
+    });
+  },
+
+  'test setting options': function(){
     var mongoose = new Mongoose();
 
     mongoose.set('a', 'b');
     mongoose.set('long option', 'c');
 
-    assert.equal('b', mongoose.get('a'));
-    assert.equal('b', mongoose.set('a'));
-    assert.equal('c', mongoose.get('long option'));
-    done();
-  });
+    mongoose.get('a').should.eql('b');
+    mongoose.set('a').should.eql('b');
+    mongoose.get('long option').should.eql('c');
+  },
 
-  it('declaring global plugins', function(done){
+  'test declaring global plugins': function (beforeExit) {
     var mong = new Mongoose()
       , schema = new Schema()
       , called = 0;
 
     mong.plugin(function (s) {
-      assert.equal(s, schema);
+      s.should.equal(schema);
       called++;
     });
 
     schema.plugin(function (s) {
-      assert.equal(s, schema);
+      s.should.equal(schema);
       called++;
     });
 
     mong.model('GlobalPlugins', schema);
 
-    assert.equal(2, called);
-    done()
-  })
+    beforeExit(function () {
+      called.should.eql(2);
+    });
+  },
 
-  describe('disconnection of all connections', function(){
-    describe('no callback', function(){
-      it('works', function (done) {
-        var mong = new Mongoose()
-          , uri = 'mongodb://localhost/mongoose_test'
-          , connections = 0
-          , disconnections = 0
-          , pending = 4;
+  'test disconnection of all connections': function (beforeExit) {
+    var mong = new Mongoose()
+      , uri = 'mongodb://localhost/mongoose_test'
+      , connections = 0
+      , disconnections = 0;
+    
+    mong.connect(process.env.MONGOOSE_TEST_URI || uri);
+    var db = mong.connection;
 
-        mong.connect(process.env.MONGOOSE_TEST_URI || uri);
-        var db = mong.connection;
-
-        function cb () {
-          if (--pending) return;
-          assert.equal(2, connections);
-          assert.equal(2, disconnections);
-          done();
-        }
-
-        db.on('open', function(){
-          connections++;
-          cb();
-        });
-
-        db.on('close', function () {
-          disconnections++;
-          cb();
-        });
-
-        var db2 = mong.createConnection(process.env.MONGOOSE_TEST_URI || uri);
-
-        db2.on('open', function () {
-          connections++;
-          cb();
-        });
-
-        db2.on('close', function () {
-          disconnections++;
-          cb();
-        });
-
-        mong.disconnect();
-      });
-
-      it('properly handles errors', function(done){
-        var mong = new Mongoose()
-          , uri = 'mongodb://localhost/mongoose_test'
-
-        mong.connect(process.env.MONGOOSE_TEST_URI || uri);
-        var db = mong.connection;
-
-        // forced failure
-        db.close = function (cb) {
-          cb(new Error('bam'));
-        };
-
-        var failure = {};
-        try {
-          mong.disconnect();
-        } catch (err) {
-          failure = err;
-        }
-        assert.equal('bam', failure.message);
-        done();
-      })
+    db.on('open', function(){
+      connections++;
     });
 
-    it('with callback', function(done){
-      var mong = new Mongoose()
-        , uri = 'mongodb://localhost/mongoose_test'
+    db.on('close', function () {
+      disconnections++;
+    });
 
-      mong.connect(process.env.MONGOOSE_TEST_URI || uri);
+    var db2 = mong.createConnection(process.env.MONGOOSE_TEST_URI || uri);
 
-      mong.connection.on('open', function () {
-        mong.disconnect(function () {
-          done();
-        });
+    db2.on('open', function () {
+      connections++;
+    });
+
+    db2.on('close', function () {
+      disconnections++;
+    });
+
+    mong.disconnect();
+
+    beforeExit(function () {
+      connections.should.eql(2);
+      disconnections.should.eql(2);
+    });
+  },
+
+  'test disconnection of all connections callback': function (beforeExit) {
+    var mong = new Mongoose()
+      , uri = 'mongodb://localhost/mongoose_test'
+      , called = false;
+
+    mong.connect(process.env.MONGOOSE_TEST_URI || uri);
+
+    mong.connection.on('open', function () {
+      mong.disconnect(function () {
+        called = true;
       });
     });
-  });
 
-  describe('model()', function(){
-    it('accessing a model that hasn\'t been defined', function(done){
-      var mong = new Mongoose()
-        , thrown = false;
-
-      try {
-        mong.model('Test');
-      } catch (e) {
-        assert.ok(/hasn't been registered/.test(e.message));
-        thrown = true;
-      }
-
-      assert.equal(true, thrown);
-      done()
+    beforeExit(function () {
+      called.should.be.true;
     });
+  },
 
-    it('returns the model at creation', function(done){
-      var Named = mongoose.model('Named', new Schema({ name: String }));
-      var n1 = new Named();
-      assert.equal(n1.name, null);
-      var n2 = new Named({ name: 'Peter Bjorn' });
-      assert.equal(n2.name, 'Peter Bjorn');
+  'try accessing a model that hasn\'t been defined': function () {
+    var mong = new Mongoose()
+      , thrown = false;
 
-      var schema = new Schema({ number: Number });
-      var Numbered = mongoose.model('Numbered', schema, collection);
-      var n3 = new Numbered({ number: 1234 });
-      assert.equal(1234, n3.number.valueOf());
-      done()
-    });
+    try {
+      mong.model('Test');
+    } catch (e) {
+      /hasn't been registered/.test(e.message).should.be.true;
+      thrown = true;
+    }
 
-    it('prevents overwriting pre-existing models', function(done){
-      var m = new Mongoose;
-      m.model('A', new Schema);
+    thrown.should.be.true;
+  },
 
-      assert.throws(function () {
-        m.model('A', new Schema);
-      }, /Cannot overwrite `A` model/);
-
-      done();
-    })
-
-    it('allows passing identical name + schema args', function(done){
-      var m = new Mongoose;
-      var schema = new Schema;
-      m.model('A', schema);
-
-      assert.doesNotThrow(function () {
-        m.model('A', schema);
-      });
-
-      done();
-    })
-
-    it('throws on unknown model name', function(done){
-      assert.throws(function () {
-        mongoose.model('iDoNotExist!');
-      }, /Schema hasn't been registered/);
-
-      done();
-    })
-
-    describe('passing collection name', function(){
-      describe('when model name already exists', function(){
-        it('returns a new uncached model', function(done){
-          var m = new Mongoose;
-          var s1 = new Schema({ a: [] });
-          var name = 'non-cached-collection-name';
-          var A = m.model(name, s1);
-          var B = m.model(name);
-          var C = m.model(name, 'alternate');
-          assert.ok(A.collection.name == B.collection.name);
-          assert.ok(A.collection.name != C.collection.name);
-          assert.ok(m.models[name].collection.name != C.collection.name);
-          assert.ok(m.models[name].collection.name == A.collection.name);
-          done();
-        })
-      })
-    })
-
-    describe('passing object literal schemas', function(){
-      it('works', function(done){
-        var m = new Mongoose;
-        var A = m.model('A', { n: [{ age: 'number' }]});
-        var a = new A({ n: [{ age: '47' }] });
-        assert.strictEqual(47, a.n[0].age);
-        done()
-      })
-    })
-  });
-
-  it('connecting with a signature of host, database, function', function(done){
+  'test connecting with a signature of host, database, function': function (){
     var mong = new Mongoose()
       , uri = process.env.MONGOOSE_TEST_URI || 'mongodb://localhost/mongoose_test';
 
     uri = url.parse(uri);
 
     mong.connect(uri.hostname, uri.pathname.substr(1), function (err) {
-      assert.ifError(err);
+      should.strictEqual(err, null);
       mong.connection.close();
-      done();
     });
-  });
+  },
 
-  describe('connecting with a signature of uri, options, function', function(){
-    it('with single mongod', function(done){
-      var mong = new Mongoose()
-        , uri = process.env.MONGOOSE_TEST_URI || 'mongodb://localhost/mongoose_test';
-
-      mong.connect(uri, { db: { safe: false }}, function (err) {
-        assert.ifError(err);
-        mong.connection.close();
-        done();
-      });
-    })
-
-    it('with replica set', function(done){
-      var mong = new Mongoose()
-        , uri = process.env.MONGOOSE_SET_TEST_URI
-
-      if (!uri) return done();
-
-      mong.connect(uri, { db: { safe: false }}, function (err) {
-        assert.ifError(err);
-        mong.connection.close();
-        done();
-      });
-    })
-  });
-
-  it('goose.connect() to a replica set', function(done){
+  'test connecting to a replica set': function () {
     var uri = process.env.MONGOOSE_SET_TEST_URI;
 
     if (!uri) {
-      console.log('\033[31m', '\n', 'You\'re not testing replica sets!'
+      console.log('\033[30m', '\n', 'You\'re not testing replica sets!'
                 , '\n', 'Please set the MONGOOSE_SET_TEST_URI env variable.', '\n'
-                , 'e.g: `mongodb://localhost:27017/db,localhost…`', '\n'
+                , 'e.g: `mongodb://localhost:27017/db,mongodb://localhost…`', '\n'
                 , '\033[39m');
-      return done();
+      return;
     }
 
-    var mong = new Mongoose()
+    var mong = new Mongoose();
 
-    mong.connect(uri, function (err) {
-      assert.ifError(err);
+    mong.connectSet(uri, function (err) {
+      should.strictEqual(err, null);
 
       mong.model('Test', new mongoose.Schema({
           test: String
@@ -307,35 +175,28 @@ describe('mongoose module:', function(){
 
       test.test = 'aa';
       test.save(function (err) {
-        assert.ifError(err);
+        should.strictEqual(err, null);
 
         Test.findById(test._id, function (err, doc) {
-          assert.ifError(err);
-          assert.equal('aa', doc.test);
+          should.strictEqual(err, null);
+          
+          doc.test.should.eql('aa');
+
           mong.connection.close();
-          complete();
         });
       });
     });
+  },
 
-    mong.connection.on('fullsetup', complete);
-
-    var pending = 2;
-    function complete () {
-      if (--pending) return;
-      done();
-    }
-  });
-
-  it('goose.createConnection() to a replica set', function(done){
+  'test initializing a new Connection to a replica set': function () {
     var uri = process.env.MONGOOSE_SET_TEST_URI;
 
-    if (!uri) return done();
+    if (!uri) return;
 
-    var mong = new Mongoose();
+    var mong = new Mongoose(true);
 
-    var conn = mong.createConnection(uri, function (err) {
-      assert.ifError(err);
+    var conn = mong.createSetConnection(uri, function (err) {
+      should.strictEqual(err, null);
 
       mong.model('ReplSetTwo', new mongoose.Schema({
           test: String
@@ -346,53 +207,29 @@ describe('mongoose module:', function(){
 
       test.test = 'aa';
       test.save(function (err) {
-        assert.ifError(err);
+        should.strictEqual(err, null);
 
         Test.findById(test._id, function (err, doc) {
-          assert.ifError(err);
-          assert.equal('aa', doc.test);
+          should.strictEqual(err, null);
+          
+          doc.test.should.eql('aa');
+
           conn.close();
-          complete();
         });
       });
     });
+  },
 
-    conn.on('fullsetup', complete);
+  'test public exports': function () {
+    mongoose.version.should.be.a('string');
+    mongoose.Collection.should.be.a('function');
+    mongoose.Connection.should.be.a('function');
+    mongoose.Schema.should.be.a('function');
+    mongoose.SchemaType.should.be.a('function');
+    mongoose.Query.should.be.a('function');
+    mongoose.Promise.should.be.a('function');
+    mongoose.Model.should.be.a('function');
+    mongoose.Document.should.be.a('function');
+  }
 
-    var pending = 2;
-    function complete () {
-      if (--pending) return;
-      done();
-    }
-  });
-
-  describe('exports', function(){
-    function test (mongoose) {
-      assert.equal('string', typeof mongoose.version);
-      assert.equal('function', typeof mongoose.Mongoose);
-      assert.equal('function', typeof mongoose.Collection);
-      assert.equal('function', typeof mongoose.Connection);
-      assert.equal('function', typeof mongoose.Schema);
-      assert.equal('function', typeof mongoose.SchemaType);
-      assert.equal('function', typeof mongoose.Query);
-      assert.equal('function', typeof mongoose.Promise);
-      assert.equal('function', typeof mongoose.Model);
-      assert.equal('function', typeof mongoose.Document);
-      assert.equal('function', typeof mongoose.Error);
-      assert.equal('function', typeof mongoose.Error.CastError);
-      assert.equal('function', typeof mongoose.Error.ValidationError);
-      assert.equal('function', typeof mongoose.Error.ValidatorError);
-      assert.equal('function', typeof mongoose.Error.VersionError);
-    }
-
-    it('of module', function(done){
-      test(mongoose);
-      done();
-    })
-    it('of new Mongoose instances', function(done){
-      test(new mongoose.Mongoose);
-      done();
-    })
-  })
-
-});
+};

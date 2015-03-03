@@ -4,16 +4,15 @@
  */
 
 var mongoose = require('../')
+  , should = require('should')
+  , Table = require('cli-table')
   , Mongoose = mongoose.Mongoose
   , Collection = mongoose.Collection
-  , assert = require('assert')
+  , Assertion = should.Assertion
   , startTime = Date.now()
   , queryCount = 0
   , opened = 0
   , closed = 0;
-
-if (process.env.D === '1')
-  mongoose.set('debug', true);
 
 /**
  * Override all Collection related queries to keep count
@@ -29,8 +28,6 @@ if (process.env.D === '1')
   , 'remove'
   , 'count'
   , 'distinct'
-  , 'isCapped'
-  , 'options'
 ].forEach(function (method) {
 
   var oldMethod = Collection.prototype[method];
@@ -65,6 +62,42 @@ Collection.prototype.onClose = function(){
 };
 
 /**
+ * Assert that a connection is open or that mongoose connections are open.
+ * Examples:
+ *    mongoose.should.be.connected;
+ *    db.should.be.connected;
+ *
+ * @api public
+ */
+
+Assertion.prototype.__defineGetter__('connected', function(){
+  if (this.obj instanceof Mongoose)
+    this.obj.connections.forEach(function(connected){
+      c.should.be.connected;
+    });
+  else
+    this.obj.readyState.should.eql(1);
+});
+
+/**
+ * Assert that a connection is closed or that a mongoose connections are closed.
+ * Examples:
+ *    mongoose.should.be.disconnected;
+ *    db.should.be.disconnected;
+ *
+ * @api public
+ */
+
+Assertion.prototype.__defineGetter__('disconnected', function(){
+  if (this.obj instanceof Mongoose)
+    this.obj.connections.forEach(function(){
+      c.should.be.disconnected;
+    });
+  else
+    this.obj.readyState.should.eql(0);
+});
+
+/**
  * Create a connection to the test database.
  * You can set the environmental variable MONGOOSE_TEST_URI to override this.
  *
@@ -72,86 +105,41 @@ Collection.prototype.onClose = function(){
  */
 
 module.exports = function (options) {
-  options || (options = {});
   var uri;
 
-  if (options.uri) {
+  if (options && options.uri) {
     uri = options.uri;
     delete options.uri;
   } else {
-    uri = module.exports.uri;
+    uri = process.env.MONGOOSE_TEST_URI ||
+          'mongodb://localhost/mongoose_test'
   }
 
-  var noErrorListener = !! options.noErrorListener;
-  delete options.noErrorListener;
-
-  var conn = mongoose.createConnection(uri, options);
-
-  if (noErrorListener) return conn;
-
-  conn.on('error', function (err) {
-    assert.ok(err);
-  });
-
-  return conn;
+  return mongoose.createConnection(uri, options);
 };
 
-/*!
- * testing uri
+/**
+ * Provide stats for tests
  */
 
-module.exports.uri = process.env.MONGOOSE_TEST_URI || 'mongodb://localhost/mongoose_test';
+process.on('beforeExit', function(){
+  var table = new Table({
+      head: ['Stat', 'Time (ms)']
+    , colWidths: [23, 15]
+  });
+
+  table.push(
+      ['Queries run', queryCount]
+    , ['Time ellapsed', Date.now() - startTime]
+    , ['Connections opened', opened]
+    , ['Connections closed', closed]
+  );
+
+  console.error(table.toString());
+});
 
 /**
- * expose mongoose
+ * Module exports.
  */
 
 module.exports.mongoose = mongoose;
-
-/**
- * expose mongod version helper
- */
-
-module.exports.mongodVersion = function (cb) {
-  var db = module.exports();
-  db.on('error', cb);
-
-  db.on('open', function () {
-    var admin = db.db.admin();
-    admin.serverStatus(function (err, info) {
-      if (err) return cb(err);
-      var version = info.version.split('.').map(function(n){return parseInt(n, 10) });
-      cb(null, version);
-    });
-  });
-};
-
-function dropDBs(done) {
-  var db = module.exports();
-  db.once('open', function () {
-    // drop the default test database
-    db.db.dropDatabase(function () {
-      var db2 = db.useDb('mongoose-test-2');
-      db2.db.dropDatabase(function () {
-        // drop mongos test db if exists
-        var mongos = process.env.MONGOOSE_MULTI_MONGOS_TEST_URI;
-        if (!mongos) return done();
-
-
-        var db = start({ uri: mongos, mongos: true });
-        db.once('open', function () {
-          db.db.dropDatabase(done);
-        });
-      });
-    });
-  });
-}
-
-before(function (done) {
-  this.timeout(10 * 1000);
-  dropDBs(done);
-});
-after(function (done) {
-  this.timeout(10 * 1000);
-  dropDBs(done);
-});

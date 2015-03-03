@@ -4,11 +4,13 @@
  */
 
 var start = require('./common')
-  , assert = require('assert')
+  , should = require('should')
   , mongoose = require('./common').mongoose
   , Schema = mongoose.Schema
   , random = require('../lib/utils').random
-  , MongooseBuffer = mongoose.Types.Buffer
+  , MongooseBuffer = mongoose.Types.Buffer;
+
+// can't index Buffer fields yet
 
 function valid (v) {
   return !v || v.length > 10;
@@ -35,28 +37,25 @@ var UserBuffer = new Schema({
  * Test.
  */
 
-describe('types.buffer', function(){
+module.exports = {
 
-  it('test that a mongoose buffer behaves and quacks like a buffer', function(done){
+  'test that a mongoose buffer behaves and quacks like an buffer': function(){
     var a = new MongooseBuffer;
 
-    assert.ok(a instanceof Buffer);
-    assert.ok(a.isMongooseBuffer);
-    assert.equal(true, Buffer.isBuffer(a));
+    a.should.be.an.instanceof(Buffer);
+    a.should.be.an.instanceof(MongooseBuffer);
+    Buffer.isBuffer(a).should.be.true;
 
     var a = new MongooseBuffer([195, 188, 98, 101, 114]);
     var b = new MongooseBuffer("buffer shtuffs are neat");
     var c = new MongooseBuffer('aGVsbG8gd29ybGQ=', 'base64');
-    var d = new MongooseBuffer(0);
 
-    assert.equal(a.toString('utf8'), 'über');
-    assert.equal(b.toString('utf8'), 'buffer shtuffs are neat');
-    assert.equal(c.toString('utf8'), 'hello world');
-    assert.equal(d.toString('utf8'), '');
-    done();
-  });
+    a.toString('utf8').should.equal('über');
+    b.toString('utf8').should.equal('buffer shtuffs are neat');
+    c.toString('utf8').should.equal('hello world');
+  },
 
-  it('buffer validation', function (done) {
+  'buffer validation': function () {
     var db = start()
       , User = db.model('UserBuffer', UserBuffer, 'usersbuffer_' + random());
 
@@ -66,41 +65,38 @@ describe('types.buffer', function(){
       });
 
       t.validate(function (err) {
-        assert.equal(err.message,'UserBuffer validation failed');
-        assert.equal(err.errors.required.kind,'required');
-        t.required = {x:[20]};
+        err.message.should.eql('Validation failed');
+        err.errors.required.type.should.equal('required');
+        t.required = 20;
         t.save(function (err) {
-          assert.ok(err);
-          assert.equal(err.name, 'ValidationError');
-          assert.equal(err.errors.required.kind, 'cast');
-          assert.equal(err.errors.required.message, 'Cast to buffer failed for value "[object Object]" at path "required"');
-          assert.deepEqual(err.errors.required.value, {x:[20]});
+          err.name.should.eql('CastError');
+          err.type.should.eql('buffer');
+          err.value.should.equal(20);
+          err.message.should.eql('Cast to buffer failed for value "20"');
           t.required = new Buffer("hello");
 
           t.sub.push({ name: 'Friday Friday' });
           t.save(function (err) {
-            assert.equal(err.message,'UserBuffer validation failed');
-            assert.equal(err.errors['sub.0.buf'].kind,'required');
+            err.message.should.eql('Validation failed');
+            err.errors.buf.type.should.equal('required');
             t.sub[0].buf = new Buffer("well well");
             t.save(function (err) {
-              assert.equal(err.message,'UserBuffer validation failed');
-              assert.equal(err.errors['sub.0.buf'].kind,'user defined');
-              assert.equal(err.errors['sub.0.buf'].message,'valid failed');
+              err.message.should.eql('Validation failed');
+              err.errors.buf.type.should.equal('valid failed');
 
               t.sub[0].buf = new Buffer("well well well");
               t.validate(function (err) {
                 db.close();
-                assert.ifError(err);
-                done();
+                should.strictEqual(null, err);
               });
             });
           });
         });
       });
-    });
-  });
+    })
+  },
 
-  it('buffer storage', function(done){
+  'buffer storage': function(){
     var db = start()
       , User = db.model('UserBuffer', UserBuffer, 'usersbuffer_' + random());
 
@@ -114,24 +110,23 @@ describe('types.buffer', function(){
       });
 
       tj.save(function (err) {
-        assert.ifError(err);
+        should.equal(null, err);
         User.find({}, function (err, users) {
           db.close();
-          assert.ifError(err);
-          assert.equal(users.length, 1);
+          should.equal(null, err);
+          users.should.have.length(1);
           var user = users[0];
           var base64 = sampleBuffer.toString('base64');
-          assert.equal(base64,
+          should.equal(base64,
                        user.serial.toString('base64'), 'buffer mismatch');
-          assert.equal(base64,
+          should.equal(base64,
                        user.required.toString('base64'), 'buffer mismatch');
-          done();
         });
       });
     });
-  });
+  },
 
-  it('test write markModified', function(done){
+  'test write markModified': function(){
     var db = start()
       , User = db.model('UserBuffer', UserBuffer, 'usersbuffer_' + random());
 
@@ -145,195 +140,187 @@ describe('types.buffer', function(){
       });
 
       tj.save(function (err) {
-        assert.ifError(err);
+        should.equal(null, err);
 
         tj.serial.write('aa', 1, 'ascii');
-        assert.equal(true, tj.isModified('serial'));
+        tj.isModified('serial').should.be.true;
 
         tj.save(function (err) {
-          assert.ifError(err);
+          should.equal(null, err);
 
           User.findById(tj._id, function (err, user) {
             db.close();
-            assert.ifError(err);
+            should.equal(null, err);
 
             var expectedBuffer = new Buffer([123, 97, 97, 42, 11]);
 
-            assert.equal(expectedBuffer.toString('base64'),
+            should.equal(expectedBuffer.toString('base64'),
                          user.serial.toString('base64'), 'buffer mismatch');
 
-            assert.equal(false, tj.isModified('required'));
+            tj.isModified('required').should.be.false;
             tj.serial.copy(tj.required, 1);
-            assert.equal(true, tj.isModified('required'));
-            assert.equal('e3thYSo=', tj.required.toString('base64'));
-
-            function not (tj) {
-              assert.equal(false, tj.isModified('required'))
-            }
-
-            function is (tj) {
-              assert.equal(true, tj.isModified('required'));
-            }
+            tj.isModified('required').should.be.true;
+            should.equal('e3thYSo=', tj.required.toString('base64'));
 
             // buffer method tests
             var fns = {
                 'writeUInt8': function () {
                   reset(tj);
-                  not(tj);
+                  tj.isModified('required').should.be.false;
                   tj.required.writeUInt8(0x3, 0, 'big');
-                  is(tj);
+                  tj.isModified('required').should.be.true;
                 }
               , 'writeUInt16': function () {
                   reset(tj);
-                  not(tj);
+                  tj.isModified('required').should.be.false;
                   tj.required.writeUInt16(0xbeef, 0, 'little');
-                  is(tj);
+                  tj.isModified('required').should.be.true;
                 }
               , 'writeUInt16LE': function () {
                   reset(tj);
-                  not(tj);
+                  tj.isModified('required').should.be.false;
                   tj.required.writeUInt16LE(0xbeef, 0);
-                  is(tj);
+                  tj.isModified('required').should.be.true;
                 }
               , 'writeUInt16BE': function () {
                   reset(tj);
-                  not(tj);
+                  tj.isModified('required').should.be.false;
                   tj.required.writeUInt16BE(0xbeef, 0);
-                  is(tj);
+                  tj.isModified('required').should.be.true;
                 }
               , 'writeUInt32': function () {
                   reset(tj);
-                  not(tj);
+                  tj.isModified('required').should.be.false;
                   tj.required.writeUInt32(0xfeedface, 0, 'little');
-                  is(tj);
+                  tj.isModified('required').should.be.true;
                 }
               , 'writeUInt32LE': function () {
                   reset(tj);
-                  not(tj);
+                  tj.isModified('required').should.be.false;
                   tj.required.writeUInt32LE(0xfeedface, 0);
-                  is(tj);
+                  tj.isModified('required').should.be.true;
                 }
               , 'writeUInt32BE': function () {
                   reset(tj);
-                  not(tj);
+                  tj.isModified('required').should.be.false;
                   tj.required.writeUInt32BE(0xfeedface, 0);
-                  is(tj);
+                  tj.isModified('required').should.be.true;
                 }
               , 'writeInt8': function () {
                   reset(tj);
-                  not(tj);
+                  tj.isModified('required').should.be.false;
                   tj.required.writeInt8(-5, 0, 'big');
-                  is(tj);
+                  tj.isModified('required').should.be.true;
                 }
               , 'writeInt16': function () {
                   reset(tj);
-                  not(tj);
+                  tj.isModified('required').should.be.false;
                   tj.required.writeInt16(0x0023, 2, 'little');
-                  is(tj);
-                  assert.equal(tj.required[2], 0x23);
-                  assert.equal(tj.required[3], 0x00);
+                  tj.isModified('required').should.be.true;
+                  tj.required[2].should.eql(0x23);
+                  tj.required[3].should.eql(0x00);
                 }
               , 'writeInt16LE': function () {
                   reset(tj);
-                  not(tj);
+                  tj.isModified('required').should.be.false;
                   tj.required.writeInt16LE(0x0023, 2);
-                  is(tj);
-                  assert.equal(tj.required[2], 0x23);
-                  assert.equal(tj.required[3], 0x00);
+                  tj.isModified('required').should.be.true;
+                  tj.required[2].should.eql(0x23);
+                  tj.required[3].should.eql(0x00);
                 }
               , 'writeInt16BE': function () {
                   reset(tj);
-                  not(tj);
+                  tj.isModified('required').should.be.false;
                   tj.required.writeInt16BE(0x0023, 2);
-                  is(tj);
+                  tj.isModified('required').should.be.true;
                 }
               , 'writeInt32': function () {
                   reset(tj);
-                  not(tj);
+                  tj.isModified('required').should.be.false;
                   tj.required.writeInt32(0x23, 0, 'big');
-                  is(tj);
-                  assert.equal(tj.required[0], 0x00);
-                  assert.equal(tj.required[1], 0x00);
-                  assert.equal(tj.required[2], 0x00);
-                  assert.equal(tj.required[3], 0x23);
+                  tj.isModified('required').should.be.true;
+                  tj.required[0].should.eql(0x00);
+                  tj.required[1].should.eql(0x00);
+                  tj.required[2].should.eql(0x00);
+                  tj.required[3].should.eql(0x23);
                   tj.required = new Buffer(8);
                 }
               , 'writeInt32LE': function () {
                   tj.required = new Buffer(8);
                   reset(tj);
-                  not(tj);
+                  tj.isModified('required').should.be.false;
                   tj.required.writeInt32LE(0x23, 0);
-                  is(tj);
+                  tj.isModified('required').should.be.true;
                 }
               , 'writeInt32BE': function () {
                   tj.required = new Buffer(8);
                   reset(tj);
-                  not(tj);
+                  tj.isModified('required').should.be.false;
                   tj.required.writeInt32BE(0x23, 0);
-                  is(tj);
-                  assert.equal(tj.required[0], 0x00);
-                  assert.equal(tj.required[1], 0x00);
-                  assert.equal(tj.required[2], 0x00);
-                  assert.equal(tj.required[3], 0x23);
+                  tj.isModified('required').should.be.true;
+                  tj.required[0].should.eql(0x00);
+                  tj.required[1].should.eql(0x00);
+                  tj.required[2].should.eql(0x00);
+                  tj.required[3].should.eql(0x23);
                 }
               , 'writeFloat': function () {
                   tj.required = new Buffer(16);
                   reset(tj);
-                  not(tj);
+                  tj.isModified('required').should.be.false;
                   tj.required.writeFloat(2.225073858507201e-308, 0, 'big');
-                  is(tj);
-                  assert.equal(tj.required[0], 0x00);
-                  assert.equal(tj.required[1], 0x0f);
-                  assert.equal(tj.required[2], 0xff);
-                  assert.equal(tj.required[3], 0xff);
-                  assert.equal(tj.required[4], 0xff);
-                  assert.equal(tj.required[5], 0xff);
-                  assert.equal(tj.required[6], 0xff);
-                  assert.equal(tj.required[7], 0xff);
+                  tj.isModified('required').should.be.true;
+                  tj.required[0].should.eql(0x00);
+                  tj.required[1].should.eql(0x0f);
+                  tj.required[2].should.eql(0xff);
+                  tj.required[3].should.eql(0xff);
+                  tj.required[4].should.eql(0xff);
+                  tj.required[5].should.eql(0xff);
+                  tj.required[6].should.eql(0xff);
+                  tj.required[7].should.eql(0xff);
                 }
               , 'writeFloatLE': function () {
                   tj.required = new Buffer(16);
                   reset(tj);
-                  not(tj);
+                  tj.isModified('required').should.be.false;
                   tj.required.writeFloatLE(2.225073858507201e-308, 0);
-                  is(tj);
+                  tj.isModified('required').should.be.true;
                 }
               , 'writeFloatBE': function () {
                   tj.required = new Buffer(16);
                   reset(tj);
-                  not(tj);
+                  tj.isModified('required').should.be.false;
                   tj.required.writeFloatBE(2.225073858507201e-308, 0);
-                  is(tj);
+                  tj.isModified('required').should.be.true;
                 }
               , 'writeDoubleLE': function () {
                   tj.required = new Buffer(8);
                   reset(tj);
-                  not(tj);
+                  tj.isModified('required').should.be.false;
                   tj.required.writeDoubleLE(0xdeadbeefcafebabe, 0);
-                  is(tj);
+                  tj.isModified('required').should.be.true;
                 }
               , 'writeDoubleBE': function () {
                   tj.required = new Buffer(8);
                   reset(tj);
-                  not(tj);
+                  tj.isModified('required').should.be.false;
                   tj.required.writeDoubleBE(0xdeadbeefcafebabe, 0);
-                  is(tj);
+                  tj.isModified('required').should.be.true;
                 }
               , 'fill': function () {
                   tj.required = new Buffer(8);
                   reset(tj);
-                  not(tj);
+                  tj.isModified('required').should.be.false;
                   tj.required.fill(0);
-                  is(tj);
+                  tj.isModified('required').should.be.true;
                   for (var i = 0; i < tj.required.length; i++) {
-                    assert.strictEqual(tj.required[i], 0);
+                    tj.required[i].should.eql(0);
                   }
                 }
               , 'set': function () {
                   reset(tj);
-                  not(tj);
+                  tj.isModified('required').should.be.false;
                   tj.required.set(0, 1);
-                  is(tj);
+                  tj.isModified('required').should.be.true;
                 }
             };
 
@@ -347,7 +334,6 @@ describe('types.buffer', function(){
                 fns[key]();
               }
             }
-            done();
           });
         });
       });
@@ -355,99 +341,10 @@ describe('types.buffer', function(){
 
     function reset (model) {
       // internal
-      model.$__.activePaths.clear('modify');
-      model.schema.requiredPaths().forEach(function (path) {
-        model.$__.activePaths.require(path);
+      model._activePaths.clear('modify');
+      model.schema.requiredPaths.forEach(function (path) {
+        model._activePaths.require(path);
       });
     }
-  });
-
-  it('can be set to null', function(done){
-    var db = start()
-      , User = db.model('UserBuffer', UserBuffer, 'usersbuffer_' + random());
-    var user = new User({ array: [null], required: new Buffer(1) });
-    user.save(function (err, doc) {
-      assert.ifError(err);
-      User.findById(doc, function (err, doc) {
-        db.close();
-        assert.ifError(err);
-        assert.equal(1, doc.array.length);
-        assert.equal(null, doc.array[0]);
-        done();
-      })
-    })
-
-  })
-
-  describe('#toObject', function(){
-    it('retains custom subtypes', function(done){
-      var buf = new MongooseBuffer(0);
-      var out = buf.toObject(2);
-      // validate the drivers Binary type output retains the option
-      assert.equal(out.sub_type, 2);
-      done();
-    })
-  })
-
-  describe('subtype', function(){
-    var db, bufferSchema, B;
-
-    before(function(done){
-      db = start();
-      bufferSchema = new Schema({ buf: Buffer });
-      B = db.model('1571', bufferSchema);
-      done();
-    })
-
-    after(function(done){
-      db.close(done);
-    })
-
-    it('default value', function(done){
-      var b = new B({ buf: new Buffer('hi') });
-      assert.strictEqual(0, b.buf._subtype);
-      done();
-    })
-
-    it('method works', function(done){
-      var b = new B({ buf: new Buffer('hi') });
-      b.buf.subtype(128);
-      assert.strictEqual(128, b.buf._subtype);
-      done();
-    })
-
-    it('is stored', function(done){
-      var b = new B({ buf: new Buffer('hi') });
-      b.buf.subtype(128);
-      b.save(function (err) {
-        if (err) return done(err);
-        B.findById(b, function (err, doc) {
-          if (err) return done(err);
-          assert.equal(128, doc.buf._subtype);
-          done();
-        })
-      })
-    })
-
-    it('changes are retained', function(done){
-      var b = new B({ buf: new Buffer('hi') });
-      b.buf.subtype(128);
-      b.save(function (err) {
-        if (err) return done(err);
-        B.findById(b, function (err, doc) {
-          if (err) return done(err);
-          assert.equal(128, doc.buf._subtype);
-          doc.buf.subtype(0);
-          doc.save(function (err) {
-            if (err) return done(err);
-            B.findById(b, function (err, doc) {
-              if (err) return done(err);
-              assert.strictEqual(0, doc.buf._subtype);
-              done();
-            })
-          })
-        })
-      })
-    })
-  })
-})
+  }
+};
